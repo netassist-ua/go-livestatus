@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Query is a binding query instance.
@@ -49,16 +50,9 @@ func (q *Query) Negate() *Query {
 	return q
 }
 
-// Exec executes the query.
-func (q *Query) Exec() (*Response, error) {
+// Sends query through the connection and recieves response
+func (q *Query) performQueryConn(conn net.Conn) (*Response, error){
 	resp := &Response{}
-
-	// Connect to socket
-	conn, err := q.dial()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
 
 	// Send command data
 	conn.Write([]byte(q.buildCmd()))
@@ -66,7 +60,7 @@ func (q *Query) Exec() (*Response, error) {
 	// Read response header
 	data := make([]byte, 16)
 
-	_, err = conn.Read(data)
+	_, err := conn.Read(data)
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +99,28 @@ func (q *Query) Exec() (*Response, error) {
 	return resp, nil
 }
 
+// Exec query with timeout
+func (q *Query) ExecTimeout(timeout time.Duration) (*Response, error){
+	// Connect to socket
+	conn, err := q.dialTimeout(timeout)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	return q.performQueryConn(conn)
+}
+
+// Exec executes the query.
+func (q *Query) Exec() (*Response, error) {
+	// Connect to socket
+	conn, err := q.dial()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	return q.performQueryConn(conn)
+}
+
 func (q *Query) buildCmd() string {
 	cmd := "GET " + q.table
 
@@ -123,6 +139,10 @@ func (q *Query) buildCmd() string {
 
 func (q *Query) dial() (net.Conn, error) {
 	return net.Dial(q.ls.network, q.ls.address)
+}
+
+func (q * Query) dialTimeout(timeout time.Duration) (net.Conn, error){
+	return net.DialTimeout(q.ls.network, q.ls.address, timeout)
 }
 
 func (q *Query) parse(data []byte) ([]Record, error) {
